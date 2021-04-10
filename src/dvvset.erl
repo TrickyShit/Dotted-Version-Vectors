@@ -237,46 +237,46 @@ greater(_, _, _) -> false.
 %% @doc Maps (applies) a function on all values in this clock set,
 %% returning the same clock set with the updated values.
 -spec map(fun((value()) -> value()), clock()) -> clock().
-map(F, {Clock,Values}) -> 
-    {[ {Id, Counter, lists:map(F, Value)} || {Id, Counter, Value} <- Clock], lists:map(F, Values)}.
+map(Function, {Clock,Values}) -> 
+    {[ {Id, Counter, lists:map(Function, Value)} || {Id, Counter, Value} <- Clock], lists:map(Function, Values)}.
 
 
 %% @doc Return a clock with the same causal history, but with only one
 %% value in the anonymous placeholder. This value is the result of
-%% the function F, which takes all values and returns a single new value.
+%% the function Function, which takes all values and returns a single new value.
 -spec reconcile(Winner::fun(([value()]) -> value()), clock()) -> clock().
-reconcile(F, Clock) ->
-    Value = F(values(Clock)),
+reconcile(Function, Clock) ->
+    Value = Function(values(Clock)),
     new(join(Clock), Value).
 
 %% @doc Returns the latest value in the clock set,
-%% according to function F(A,B), which returns *true* if 
+%% according to function Function(A,B), which returns *true* if 
 %% A compares less than or equal to B, false otherwise.
 -spec last(LessOrEqual::fun((value(),value()) -> boolean()), clock()) -> value().
-last(F, Clock) ->
-   {_ ,_ , Values2} = find_entry(F, Clock),
+last(Function, Clock) ->
+   {_ ,_ , Values2} = find_entry(Function, Clock),
    Values2.
 
 %% @doc Return a clock with the same causal history, but with only one
 %% value in its original position. This value is the newest value
-%% in the given clock, according to function F(A,B), which returns *true*
+%% in the given clock, according to function Function(A,B), which returns *true*
 %% if A compares less than or equal to B, false otherwise.
 -spec lww(LessOrEqual::fun((value(),value()) -> boolean()), clock()) -> clock().
-lww(F, Clock={E,_}) ->
-    case find_entry(F, Clock) of
+lww(Function, Clock={E,_}) ->
+    case find_entry(Function, Clock) of
         {id, Id, Value}      -> {join_and_replace(Id, Value, E),[]};
         {anonym, _, Value}  -> new(join(Clock), Value)
     end.
 
 %% find_entry/2 - Private function
-find_entry(F, {[], [Value|T]}) -> find_entry(F, null, Value, {[],T}, anonym);
-find_entry(F, {[{_, _, []} | T], Values}) -> find_entry(F, {T,Values});
-find_entry(F, {[{Id, _, [Value|_]} | T], Values}) -> find_entry(F, Id, Value, {T,Values}, id).
+find_entry(Function, {[], [Value|T]}) -> find_entry(Function, null, Value, {[],T}, anonym);
+find_entry(Function, {[{_, _, []} | T], Values}) -> find_entry(Function, {T,Values});
+find_entry(Function, {[{Id, _, [Value|_]} | T], Values}) -> find_entry(Function, Id, Value, {T,Values}, id).
 
 %% find_entry/5 - Private function
-find_entry(F, Id, Value, Clock, Flag) ->
+find_entry(Function, Id, Value, Clock, Flag) ->
     Fun = fun (A,B) ->
-        case F(A,B) of
+        case Function(A,B) of
             false -> {left,A}; % A is newer than B
             true  -> {right,B} % A is older than B
         end
@@ -286,16 +286,16 @@ find_entry(F, Id, Value, Clock, Flag) ->
 %% find_entry2/5 - Private function
 find_entry2(_, Id, Value, {[], []}, anonym) -> {anonym, Id , Value};
 find_entry2(_, Id, Value, {[], []}, id) -> {id, Id, Value};
-find_entry2(F, Id, Value, {[], [Values1 | T]}, Flag) ->
-    case F(Value, Values1) of
-        {left,Values2}  -> find_entry2(F, Id, Values2, {[],T}, Flag);
-        {right,Values2} -> find_entry2(F, Id, Values2, {[],T}, anonym)
+find_entry2(Function, Id, Value, {[], [Values1 | T]}, Flag) ->
+    case Function(Value, Values1) of
+        {left,Values2}  -> find_entry2(Function, Id, Values2, {[],T}, Flag);
+        {right,Values2} -> find_entry2(Function, Id, Values2, {[],T}, anonym)
     end;
-find_entry2(F, Id, Value, {[{_, _, []} | T], Values}, Flag) -> find_entry2(F, Id, Value, {T, Values}, Flag);
-find_entry2(F, Id, Value, {[{Id1, _, [Values1|_]} | T], Values}, Flag) -> 
-    case F(Value, Values1) of
-        {left,Values2}  -> find_entry2(F, Id, Values2, {T, Values}, Flag);
-        {right,Values2} -> find_entry2(F, Id1, Values2, {T, Values}, Flag)
+find_entry2(Function, Id, Value, {[{_, _, []} | T], Values}, Flag) -> find_entry2(Function, Id, Value, {T, Values}, Flag);
+find_entry2(Function, Id, Value, {[{Id1, _, [Values1|_]} | T], Values}, Flag) -> 
+    case Function(Value, Values1) of
+        {left,Values2}  -> find_entry2(Function, Id, Values2, {T, Values}, Flag);
+        {right,Values2} -> find_entry2(Function, Id1, Values2, {T, Values}, Flag)
     end.
 
 %% Private function
@@ -343,7 +343,7 @@ sync_test() ->
     A1  = update(new_list(join(A),[v2]), a),
     A3  = update(new_list(join(A1),[v3]), b),
     A4  = update(new_list(join(A1),[v3]), c),
-    F   = fun (ListClocks,R) -> ListClocks>R end,
+    Function   = fun (ListClocks,R) -> ListClocks>R end,
     W   = {[{a,1,[]}],[]},
     Z   = {[{a,2,[v2,v1]}],[]},
     ?assertEqual( sync([W,Z])     , {[{a,2,[v2]}],[]}                         ),
@@ -358,7 +358,7 @@ sync_test() ->
     ?assertEqual( sync([Y,A])     , sync([A,Y])                               ),
     ?assertEqual( sync([Y,A])     , sync([A,Y])                               ),
     ?assertEqual( sync([A,X])     , sync([X,A])                               ),
-    ?assertEqual( lww(F,A4)     , sync([A4,lww(F,A4)])                        ),
+    ?assertEqual( lww(Function,A4)     , sync([A4,lww(Function,A4)])                        ),
     ok.
 
 sync_update_test() ->
@@ -380,17 +380,17 @@ event_test() ->
     ok.
 
 lww_last_test() ->
-    F  = fun (A,B) -> A =< B end,
+    Function  = fun (A,B) -> A =< B end,
     F2 = fun ({_,TS1}, {_,TS2}) -> TS1 =< TS2 end,
     X  = {[{a,4,[5,2]},{b,1,[]},{c,1,[3]}],[]},
     Y  = {[{a,4,[5,2]},{b,1,[]},{c,1,[3]}],[10,0]},
     Z  = {[{a,4,[5,2]}, {b,1,[1]}], [3]},
     A  = {[{a,4,[{5, 1002345}, {7, 1002340}]}, {b,1,[{4, 1001340}]}], [{2, 1001140}]},
-    ?assertEqual( last(F,X) , 5                                         ),
-    ?assertEqual( last(F,Y) , 10                                        ),
-    ?assertEqual( lww(F,X)  , {[{a,4,[5]},{b,1,[]},{c,1,[]}],[]}        ),
-    ?assertEqual( lww(F,Y)  , {[{a,4,[]},{b,1,[]},{c,1,[]}],[10]}       ),
-    ?assertEqual( lww(F,Z)  , {[{a,4,[5]},{b,1,[]}],[]}                 ),
+    ?assertEqual( last(Function,X) , 5                                         ),
+    ?assertEqual( last(Function,Y) , 10                                        ),
+    ?assertEqual( lww(Function,X)  , {[{a,4,[5]},{b,1,[]},{c,1,[]}],[]}        ),
+    ?assertEqual( lww(Function,Y)  , {[{a,4,[]},{b,1,[]},{c,1,[]}],[10]}       ),
+    ?assertEqual( lww(Function,Z)  , {[{a,4,[5]},{b,1,[]}],[]}                 ),
     ?assertEqual( lww(F2,A) , {[{a,4,[{5, 1002345}]}, {b,1,[]}], []}    ),
     ok.
 
@@ -458,9 +458,9 @@ ids_values_test() ->
 map_test() ->
     A = {[{a,4,[]},{b,0,[]},{c,1,[]}],[10]},
     B = {[{a,4,[5,0]},{b,0,[]},{c,1,[2]}],[20,10]},
-    F = fun (X) -> X*2 end,
-    ?assertEqual( map(F,A) , {[{a,4,[]},{b,0,[]},{c,1,[]}],[20]}            ),
-    ?assertEqual( map(F,B) , {[{a,4,[10,0]},{b,0,[]},{c,1,[4]}],[40,20]}    ),
+    Function = fun (X) -> X*2 end,
+    ?assertEqual( map(Function,A) , {[{a,4,[]},{b,0,[]},{c,1,[]}],[20]}            ),
+    ?assertEqual( map(Function,B) , {[{a,4,[10,0]},{b,0,[]},{c,1,[4]}],[40,20]}    ),
     ok.
 
 -endif.
